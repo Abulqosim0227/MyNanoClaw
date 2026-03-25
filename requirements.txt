@@ -9,3 +9,4 @@ PyMuPDF>=1.23.0
 python-docx>=1.0.0
 SpeechRecognition>=3.10.0
 pydub>=0.25.0
+asyncssh>=2.14.0

@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 
 from aiogram import Router
+from aiogram.enums import ParseMode
+from aiogram.filters import Command
 from aiogram.types import Message
 
 from claw.config import Config
@@ -13,6 +15,8 @@ from claw.core.session import SessionManager, SessionError
 from claw.rag.pipeline import RAGPipeline
 from claw.telegram.handlers import code as code_handler
 from claw.telegram.handlers import monitor as monitor_handler
+from claw.telegram.handlers import remote as remote_handler
+from claw.telegram.handlers import terminal as terminal_handler
 from claw.telegram.handlers import scrape as scrape_handler
 from claw.telegram.handlers import tasks as tasks_handler
 from claw.telegram.handlers import translate as translate_handler
@@ -47,19 +51,37 @@ def _session_key(user_id: int) -> str:
 async def _send_response(message: Message, processing: Message, text: str) -> None:
     if len(text) > 4096:
         chunks = [text[i:i + 4096] for i in range(0, len(text), 4096)]
-        await processing.edit_text(chunks[0])
+        await _safe_edit(processing, chunks[0])
         for chunk in chunks[1:]:
-            await message.answer(chunk)
+            await _safe_send(message, chunk)
     else:
-        await processing.edit_text(text)
+        await _safe_edit(processing, text)
+
+
+async def _safe_edit(msg: Message, text: str) -> None:
+    try:
+        await msg.edit_text(text, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await msg.edit_text(text)
+
+
+async def _safe_send(msg: Message, text: str) -> None:
+    try:
+        await msg.answer(text, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await msg.answer(text)
 
 
 async def _handle_chat(message: Message, text: str, user_id: int) -> None:
     session_name = _session_key(user_id)
     history = _sessions.load(session_name)
-    processing = await message.answer("...")
+    processing = await message.answer("Thinking...")
 
     if _rag and _rag.index.total_vectors > 0:
+        try:
+            await processing.edit_text("Searching your knowledge...")
+        except Exception:
+            pass
         rag_result = await _rag.query(text)
 
         if rag_result.gate_passed:
@@ -186,6 +208,163 @@ _INTENT_MAP = {
 }
 
 
+@router.message(Command("start"))
+async def handle_start(message: Message) -> None:
+    name = message.from_user.first_name if message.from_user else "there"
+
+    welcome = (
+        f"Hey {name}! I'm Claw — your personal AI second brain.\n"
+        "\n"
+        "I live in your Telegram. You talk to me like a person, "
+        "no special commands needed. I remember everything you "
+        "feed me and answer from YOUR data.\n"
+        "\n"
+        "Here's how it works:\n"
+        "\n"
+        "-- STEP 1: Feed me knowledge --\n"
+        "\n"
+        "Send me any URL:\n"
+        "  Just paste a link, I'll scrape it and save the content.\n"
+        "  Example: https://docs.python.org/3/tutorial/\n"
+        "\n"
+        "Deep crawl an entire site:\n"
+        '  "grab everything from https://fastapi.tiangolo.com"\n'
+        '  "crawl https://docs.python.org go 3 levels deep"\n'
+        "\n"
+        "Send me files:\n"
+        "  PDF, DOCX, TXT, MD, CSV, JSON, PY, HTML\n"
+        "  Just drag and drop. I extract text and index it.\n"
+        "\n"
+        "Send a voice message:\n"
+        "  I transcribe it to text automatically.\n"
+    )
+    await message.answer(welcome)
+
+    features = (
+        "-- STEP 2: Ask me anything --\n"
+        "\n"
+        "I search YOUR saved data first. If I find a match,\n"
+        "I answer from your knowledge with source links.\n"
+        "If not, I use Claude's general knowledge and tell you.\n"
+        "\n"
+        "Examples:\n"
+        '  "what does FastAPI say about authentication?"\n'
+        '  "summarize what I saved about Python decorators"\n'
+        '  "compare the articles I have about RAG"\n'
+        "\n"
+        "-- STEP 3: Stay productive --\n"
+        "\n"
+        "Tasks:\n"
+        '  "add task fix login bug high priority"\n'
+        '  "add task deploy by 2026-04-01"\n'
+        '  "my tasks" to see active tasks\n'
+        '  "done abc123" to complete a task\n'
+        "\n"
+        "Reminders:\n"
+        '  "remind me to check server at 2026-03-26 15:00"\n'
+        '  "my reminders" to see pending ones\n'
+        "  I'll ping you at the exact time.\n"
+        "\n"
+        "Daily briefing:\n"
+        '  "good morning" or "briefing"\n'
+        "  Shows: due tasks, reminders, knowledge stats\n"
+    )
+    await message.answer(features)
+
+    tools = (
+        "-- EXTRA TOOLS --\n"
+        "\n"
+        "Website monitoring:\n"
+        '  "watch https://competitor.com every 6h"\n'
+        "  I check periodically and alert you if content changes.\n"
+        '  "my watches" to see tracked sites\n'
+        "\n"
+        "Translation:\n"
+        '  "translate to Uzbek: how are you?"\n'
+        '  "translate to Russian: meeting at 3pm"\n'
+        "  Works with any language.\n"
+        "\n"
+        "Run Python code:\n"
+        "  Send code in ```python blocks.\n"
+        "  I execute it and return the output.\n"
+        "\n"
+        "Remote server control:\n"
+        '  "my servers" to see connected servers\n'
+        '  "vps> ls -la" runs command on your VPS\n'
+        '  "vps> docker ps" check containers remotely\n'
+        '  "vps> claude -p \'your prompt\'" use Claude on VPS\n'
+        "\n"
+        "Local terminal:\n"
+        '  "$ git status" runs on this machine\n'
+        '  "$ python --version"\n'
+        "\n"
+        "-- SETTINGS --\n"
+        "\n"
+        '  "use opus" or "use haiku" — switch AI model\n'
+        '  "stats" — see session token usage\n'
+        '  "start fresh" — clear conversation history\n'
+        '  "branch this as research" — fork the session\n'
+        '  "show sessions" — list all saved sessions\n'
+        '  "my sources" — see all saved knowledge\n'
+        '  "how much do I know" — knowledge base stats\n'
+        '  "delete https://..." — remove a source\n'
+        "\n"
+        "That's it. No commands to memorize.\n"
+        "Just talk to me like a person.\n"
+        "\n"
+        "Try it now — send me a URL or ask me something."
+    )
+    await message.answer(tools)
+
+
+@router.message(Command("menu"))
+async def handle_menu(message: Message) -> None:
+    lines = [
+        "What do you need?\n",
+        "KNOWLEDGE",
+        "  Send a URL — I scrape and save it",
+        "  Send a file (PDF/DOCX/TXT) — I extract and index",
+        '  "my sources" — list saved pages',
+        '  "how much do I know" — knowledge stats',
+        '  "delete https://..." — remove a source',
+        "",
+        "ASK",
+        "  Just type your question",
+        "  I search your data first, then Claude",
+        "",
+        "TASKS",
+        '  "add task [description]" — create task',
+        '  "my tasks" — list active tasks',
+        '  "done [id]" — complete a task',
+        "",
+        "REMINDERS",
+        '  "remind me [text] at [date time]"',
+        '  "my reminders" — list pending',
+        "",
+        "BRIEFING",
+        '  "good morning" or "briefing"',
+        "",
+        "MONITOR",
+        '  "watch https://..." — track site changes',
+        '  "my watches" — list tracked sites',
+        "",
+        "TERMINAL",
+        '  "$ [command]" — run on local machine',
+        '  "vps> [command]" — run on remote server',
+        '  "my servers" — list connected servers',
+        "",
+        "TOOLS",
+        '  "translate to [lang]: [text]"',
+        "  Send ```python code blocks to execute",
+        "",
+        "SETTINGS",
+        '  "use opus/haiku/sonnet" — switch model',
+        '  "stats" — session info',
+        '  "start fresh" — clear history',
+    ]
+    await message.answer("\n".join(lines))
+
+
 @router.message()
 async def handle_message(message: Message) -> None:
     if not message.text or not message.from_user:
@@ -224,5 +403,15 @@ async def handle_message(message: Message) -> None:
         await code_handler.handle_run_code(message, classified.params["code"], classified.params["language"])
     elif classified.intent == Intent.TRANSLATE:
         await translate_handler.handle_translate(message, classified.params["text"], classified.params["target_lang"])
+    elif classified.intent == Intent.SHELL:
+        await terminal_handler.handle_shell(message, classified.params["command"], classified.params["session"])
+    elif classified.intent == Intent.TERMINAL_CREATE:
+        await terminal_handler.handle_session_create(message, classified.params["name"], classified.params["cwd"])
+    elif classified.intent == Intent.TERMINAL_LIST:
+        await terminal_handler.handle_session_list(message)
+    elif classified.intent == Intent.REMOTE:
+        await remote_handler.handle_remote(message, classified.params["server"], classified.params["command"])
+    elif classified.intent == Intent.SERVER_LIST:
+        await remote_handler.handle_server_list(message)
     elif classified.intent in _INTENT_MAP:
         await _INTENT_MAP[classified.intent](message, text, user_id)

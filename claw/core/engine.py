@@ -72,6 +72,7 @@ class ClaudeEngine:
                 "claude",
                 "-p", safe_prompt,
                 "--model", self.model,
+                "--no-input",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

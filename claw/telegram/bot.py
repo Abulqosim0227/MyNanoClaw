@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 
 from claw.config import Config
 from claw.core.engine import ClaudeEngine
@@ -17,7 +18,7 @@ from claw.security.rate_limiter import RateLimiter
 from claw.monitor.watcher import WatchManager, ChangeAlert
 from claw.tasks.manager import TaskManager
 from claw.tasks.reminders import ReminderManager, Reminder
-from claw.telegram.handlers import chat, files, monitor, scrape, tasks, translate
+from claw.telegram.handlers import chat, files, monitor, remote, scrape, tasks, translate
 from claw.telegram.middleware import AuthMiddleware, RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
@@ -70,16 +71,20 @@ def create_bot(config: Config) -> tuple[Bot, Dispatcher]:
     tasks.setup(task_mgr, reminder_mgr, storage, index=index)
     monitor.setup(watch_mgr)
     translate.setup(engine)
+    remote.setup()
     dp.include_router(files.router)
     dp.include_router(chat.router)
 
-    async def _start_background_loops() -> None:
-        await asyncio.gather(
-            reminder_mgr.start_loop(interval=30),
-            watch_mgr.start_loop(interval=300),
-        )
+    async def _on_startup(*args, **kwargs) -> None:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Welcome message"),
+            BotCommand(command="menu", description="Show what I can do"),
+        ])
+        await asyncio.to_thread(embedder.preload)
+        asyncio.create_task(reminder_mgr.start_loop(interval=30))
+        asyncio.create_task(watch_mgr.start_loop(interval=300))
 
-    dp.startup.register(lambda: asyncio.create_task(_start_background_loops()))
+    dp.startup.register(_on_startup)
 
     logger.info(
         "Bot initialized | model=%s | token=%s | vectors=%d",

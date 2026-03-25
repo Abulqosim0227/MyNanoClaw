@@ -11,5 +11,7 @@ dist/
 build/
 sessions/*.md
 !sessions/.gitkeep
+data/*.json
+!data/.gitkeep
 .mypy_cache/
 8_rag_architectures.html

@@ -30,6 +30,11 @@ class Intent(Enum):
     WATCH_REMOVE = auto()
     RUN_CODE = auto()
     TRANSLATE = auto()
+    SHELL = auto()
+    TERMINAL_CREATE = auto()
+    TERMINAL_LIST = auto()
+    REMOTE = auto()
+    SERVER_LIST = auto()
 
 
 @dataclass(frozen=True)
@@ -187,6 +192,25 @@ _TRANSLATE_SIMPLE = re.compile(
     re.IGNORECASE,
 )
 
+_SHELL_PATTERN = re.compile(r"^\$\s+(.+)", re.DOTALL)
+_SHELL_SESSION_PATTERN = re.compile(r"^(\w+)\$\s+(.+)", re.DOTALL)
+
+_TERMINAL_CREATE_PATTERN = re.compile(
+    r"\bterminal\s+(?:new|create|add)\s+(\w+)\s+(.+)", re.IGNORECASE,
+)
+
+_TERMINAL_LIST_PATTERNS = [
+    re.compile(r"\b(?:show|list|my)\s+terminals?\b", re.IGNORECASE),
+    re.compile(r"\bterminal\s+(?:list|sessions?)\b", re.IGNORECASE),
+]
+
+_REMOTE_PATTERN = re.compile(r"^(\w+)>\s*(.+)", re.DOTALL)
+
+_SERVER_LIST_PATTERNS = [
+    re.compile(r"\b(?:show|list|my)\s+servers?\b", re.IGNORECASE),
+    re.compile(r"\bremote\s+servers?\b", re.IGNORECASE),
+]
+
 
 def _extract_url(text: str) -> str:
     match = _URL_PATTERN.search(text)
@@ -215,6 +239,46 @@ def classify(text: str) -> ClassifiedIntent:
             params={"model": model_match.group(1).lower()},
             confidence=0.95,
         )
+
+    remote_match = _REMOTE_PATTERN.match(text)
+    if remote_match:
+        return ClassifiedIntent(
+            intent=Intent.REMOTE,
+            params={"server": remote_match.group(1), "command": remote_match.group(2).strip()},
+            confidence=0.95,
+        )
+
+    for pattern in _SERVER_LIST_PATTERNS:
+        if pattern.search(text):
+            return ClassifiedIntent(intent=Intent.SERVER_LIST, params={}, confidence=0.9)
+
+    shell_session_match = _SHELL_SESSION_PATTERN.match(text)
+    if shell_session_match:
+        return ClassifiedIntent(
+            intent=Intent.SHELL,
+            params={"command": shell_session_match.group(2).strip(), "session": shell_session_match.group(1)},
+            confidence=0.95,
+        )
+
+    shell_match = _SHELL_PATTERN.match(text)
+    if shell_match:
+        return ClassifiedIntent(
+            intent=Intent.SHELL,
+            params={"command": shell_match.group(1).strip(), "session": ""},
+            confidence=0.95,
+        )
+
+    terminal_create_match = _TERMINAL_CREATE_PATTERN.search(text)
+    if terminal_create_match:
+        return ClassifiedIntent(
+            intent=Intent.TERMINAL_CREATE,
+            params={"name": terminal_create_match.group(1), "cwd": terminal_create_match.group(2).strip()},
+            confidence=0.95,
+        )
+
+    for pattern in _TERMINAL_LIST_PATTERNS:
+        if pattern.search(text):
+            return ClassifiedIntent(intent=Intent.TERMINAL_LIST, params={}, confidence=0.9)
 
     for pattern in _HELP_PATTERNS:
         if pattern.search(text):

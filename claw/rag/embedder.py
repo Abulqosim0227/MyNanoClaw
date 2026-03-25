@@ -20,8 +20,12 @@ class Embedder:
         if self._model is not None:
             return
         from sentence_transformers import SentenceTransformer
+        logger.info("Loading embedding model: %s (first time only)...", MODEL_NAME)
         self._model = SentenceTransformer(MODEL_NAME)
-        logger.info("Loaded embedding model: %s", MODEL_NAME)
+        logger.info("Embedding model ready.")
+
+    def preload(self) -> None:
+        self._load_model()
 
     def embed(self, texts: Sequence[str]) -> np.ndarray:
         self._load_model()
