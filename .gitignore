@@ -1,0 +1,15 @@
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+sessions/*.md
+!sessions/.gitkeep
+.mypy_cache/
+8_rag_architectures.html
